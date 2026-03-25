@@ -15,7 +15,8 @@ RESTORE_NORMAL_SCREEN = "\e[?1049l"
 
 # CONFIG
 KEYS_POSITION = ENV['JUMP_KEYS_POSITION']
-KEYS = 'rewqfdsavcx'.each_char.to_a
+KEYS = (ENV['JUMP_KEY_SET'] || 'rewqfdsavcx').each_char.to_a
+REVERSE_KEYS = ENV['JUMP_KEY_DIRECTION'] == '1'
 Config = Struct.new(
   :pane_nr,
   :pane_tty_file,
@@ -219,6 +220,7 @@ def main
   screen_chars =
     `tmux capture-pane -p -t #{Config.pane_nr} -S #{start} -E #{ending}`[0..-2].gsub("︎", '') # without colors
   positions = positions_of jump_to_char, screen_chars
+  positions.reverse! if REVERSE_KEYS
   position_index = recover_screen_after do
     prompt_position_index! positions, screen_chars
   end
