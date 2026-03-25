@@ -15,7 +15,7 @@ RESTORE_NORMAL_SCREEN = "\e[?1049l"
 
 # CONFIG
 KEYS_POSITION = ENV['JUMP_KEYS_POSITION']
-KEYS = 'jfhgkdlsa'.each_char.to_a
+KEYS = 'rewqfdsavcx'.each_char.to_a
 Config = Struct.new(
   :pane_nr,
   :pane_tty_file,
@@ -143,46 +143,68 @@ def positions_of(jump_to_char, screen_chars)
   positions
 end
 
-def draw_keys_onto_tty(screen_chars, positions, keys, key_len)
+# Build a list of keys for the given number of positions.
+# Single-char keys are assigned first to maximise the number of positions
+# reachable with a single keypress. Only when more positions exist than
+# available single-char keys does any key become a 2-char prefix.
+#
+# With k = KEYS.size base keys, the split is:
+#   single_count  = k - prefix_count
+#   double_count  = prefix_count * k
+#   total         = k + prefix_count * (k - 1)
+#
+# prefix_count is the smallest integer satisfying total >= position_count.
+def keys_for(position_count)
+  n = position_count
+  k = KEYS.size
+
+  return KEYS[0...n] if n <= k
+
+  # Minimum number of keys that must become 2-char prefixes
+  prefix_count = [((n - k).to_f / (k - 1)).ceil, k].min
+
+  single_keys = KEYS[0...(k - prefix_count)]
+  prefix_keys = KEYS[(k - prefix_count)...k]
+  double_keys = prefix_keys.flat_map { |p| KEYS.map { |s| p + s } }
+
+  (single_keys + double_keys)[0...n]
+end
+
+def draw_keys_onto_tty(screen_chars, positions, keys)
   File.open(Config.pane_tty_file, 'a') do |tty|
     cursor = 0
     positions.each_with_index do |pos, i|
+      key = keys[i]
       tty << "#{GRAY}#{screen_chars[cursor..pos-1].gsub("\n", "\n\r")}"
-      tty << "#{RED}#{keys[i]}"
-      cursor = pos + key_len - (KEYS_POSITION == 'off_left' ? key_len : 0)
+      tty << "#{RED}#{key}"
+      cursor = pos + key.size - (KEYS_POSITION == 'off_left' ? key.size : 0)
     end
     tty << "#{GRAY}#{screen_chars[cursor..-1].gsub("\n", "\n\r")}"
     tty << HOME_SEQ
   end
 end
 
-def keys_for(position_count, keys = KEYS)
-  if position_count > keys.size
-    keys_for(position_count, keys.product(KEYS).map(&:join))
-  else
-    keys
-  end
-end
-
 def prompt_position_index!(positions, screen_chars) # raises Timeout::Error
   return nil if positions.size == 0
   return 0 if positions.size == 1
-  keys = keys_for positions.size
-  key_len = keys.first.size
-  draw_keys_onto_tty screen_chars, positions, keys, key_len
-  key_index = KEYS.index(prompt_char!)
-  if !key_index.nil? && key_len > 1
-    magnitude = KEYS.size ** (key_len - 1)
-    range_beginning = key_index * magnitude # p.e. 2 * 22^1
-    range_ending = range_beginning + magnitude - 1
-    remaining_positions = positions[range_beginning..range_ending]
-    return nil if remaining_positions.nil?
-    lower_index = prompt_position_index!(remaining_positions, screen_chars)
-    return nil if lower_index.nil?
-    range_beginning + lower_index
-  else
-    key_index
-  end
+
+  keys = keys_for(positions.size)
+  draw_keys_onto_tty(screen_chars, positions, keys)
+
+  char = prompt_char!
+  return nil if char.nil?
+
+  # Direct single-char match
+  single_index = keys.index(char)
+  return single_index if single_index && keys[single_index].size == 1
+
+  # First char of a 2-char key — prompt for the second char
+  return nil unless keys.any? { |k| k.size == 2 && k[0] == char }
+
+  char2 = prompt_char!
+  return nil if char2.nil?
+
+  keys.index(char + char2)
 end
 
 def main
