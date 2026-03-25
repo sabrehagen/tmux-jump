@@ -106,7 +106,7 @@ end
 
 def read_char_from_file!(tmp_file) # raises Timeout::Error
   char = nil
-  Timeout.timeout(10) do
+  Timeout.timeout(86400) do
     begin
       loop do # busy waiting with files :/
         break if char = tmp_file.getc
@@ -190,6 +190,7 @@ def prompt_position_index!(positions, screen_chars) # raises Timeout::Error
   return 0 if positions.size == 1
 
   keys = keys_for(positions.size)
+  keys.reverse! if REVERSE_KEYS
   draw_keys_onto_tty(screen_chars, positions, keys)
 
   char = prompt_char!
@@ -220,7 +221,6 @@ def main
   screen_chars =
     `tmux capture-pane -p -t #{Config.pane_nr} -S #{start} -E #{ending}`[0..-2].gsub("︎", '') # without colors
   positions = positions_of jump_to_char, screen_chars
-  positions.reverse! if REVERSE_KEYS
   position_index = recover_screen_after do
     prompt_position_index! positions, screen_chars
   end
